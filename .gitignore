@@ -19,7 +19,10 @@ __pycache__/
 checkpoints/
 test_waves/
 reconstructed/
-.python-version
+.venv/
+.env
+modelsweights/
+outputs/
 ruff.log
 /configs/inuse/
 runs/

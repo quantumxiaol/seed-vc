@@ -18,6 +18,64 @@
 ## 评估📊
 查看 [EVAL.md](EVAL.md) 获取客观评估结果和与其他基准模型的比较。
 
+## 本地 Mac 环境（uv）
+
+本项目的 uv 环境固定使用 Python 3.10、PyTorch 2.5.1 和 NumPy 1.26.4，
+适用于 Apple Silicon Mac。依赖由 `pyproject.toml` 和 `uv.lock` 管理，
+无需安装 CUDA 或 nightly PyTorch。系统需要 FFmpeg（若没有，可用 `brew install ffmpeg` 安装）。
+当前 uv 包索引使用清华 PyPI 镜像，以避免本机访问 PyPI 文件服务器缓慢；
+模型下载仍使用 Hugging Face 官方仓库。
+
+在项目根目录执行：
+
+```bash
+uv sync --locked
+cp -n .env.example .env
+uv run --env-file .env download_svc_models.py
+uv run --env-file .env app_svc.py --fp16 False
+```
+
+打开终端显示的本地地址，通常是 `http://127.0.0.1:7860`。Mac 会自动选择 MPS；
+`.env` 中启用了不受支持的 MPS 运算回退到 CPU，先以 `--fp16 False` 验证稳定性。
+仅执行 `uv run` 不会自动读取 `.env`，请保留 `--env-file .env`。
+
+模型仓库为 [Plachta/Seed-VC](https://huggingface.co/Plachta/Seed-VC)。
+`HF_HOME=./modelsweights` 会把缓存放到项目根目录的 `modelsweights/hub/`，
+其中包括 44.1 kHz SVC 主模型、Whisper-small、BigVGAN、CAMPPlus 和 RMVPE。
+下载脚本仅获取这条歌声转换流程所需的文件，重复运行会复用缓存。
+使用 `uv run --env-file .env download_svc_models.py --check` 可检查本地文件是否齐全。
+`.venv/`、`.env`、模型和 `outputs/` 已加入 Git 忽略列表。
+
+如果网络无法直连 Hugging Face，可以在 `.env` 中配置自己的 `HTTP_PROXY` / `HTTPS_PROXY`，
+同时设置 `NO_PROXY=localhost,127.0.0.1,::1`，避免本地 Web UI 走代理；
+也可按下文使用 `HF_ENDPOINT` 镜像。公开模型不需要 Hugging Face token。
+
+### 角色音色翻唱
+
+- **Source Audio / 源音频**：另一个角色唱歌的干声，提供歌词、音高、节奏和唱法。
+- **Reference Audio / 参考音频**：希望输出的角色音色，建议先用 5–15 秒清晰的单人日语录音，
+  尽量没有 BGM、混响、重叠人声或长静音。参考可以是说话，也可以是唱歌；Web UI 最多取前 25 秒。
+- 初次试听可用 10 步，正式转换从 30–50 步开始；长度 `1.0`、CFG `0.7`、
+  自动 F0 调整关闭、半音偏移 `0`，以保留原歌曲调性和速度。
+- 输出是转换后的干声；需要伴奏时，再与原伴奏混音。模型不会根据日语参考把歌曲翻译成日语。
+  相似度需要用实际素材试听确认，先测试 10–20 秒片段，再处理整首歌。
+
+命令行等价用法（将路径替换为自己的音频）：
+
+```bash
+uv run --env-file .env inference.py \
+  --source "input/song_dry.wav" \
+  --target "input/character_reference.wav" \
+  --output outputs \
+  --f0-condition True \
+  --auto-f0-adjust False \
+  --semi-tone-shift 0 \
+  --length-adjust 1.0 \
+  --diffusion-steps 30 \
+  --inference-cfg-rate 0.7 \
+  --fp16 False
+```
+
 ## 使用🛠️
 我们已发布用于不同目的的3个模型：
 

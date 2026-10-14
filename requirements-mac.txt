@@ -1,17 +1,17 @@
---extra-index-url https://download.pytorch.org/whl/cu121
-torch --pre --extra-index-url https://download.pytorch.org/whl/nightly/cpu
-torchvision --pre --extra-index-url https://download.pytorch.org/whl/nightly/cpu
-torchaudio --pre --extra-index-url https://download.pytorch.org/whl/nightly/cpu
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
 accelerate
 scipy==1.13.1
 librosa==0.10.2
-huggingface-hub>=0.28.1
+huggingface-hub>=0.28.1,<1.0
 munch==4.0.0
 einops==0.8.0
 descript-audio-codec==1.0.0
 gradio==5.23.0
 pydub==0.25.1
 resemblyzer
+typing==3.7.4.3
 jiwer==3.0.3
 transformers==4.46.3
 FreeSimpleGUI==5.1.1

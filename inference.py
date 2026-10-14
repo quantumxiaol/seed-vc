@@ -2,7 +2,6 @@ import os
 
 import numpy as np
 
-os.environ['HF_HUB_CACHE'] = './checkpoints/hf_cache'
 import shutil
 import warnings
 import argparse
@@ -326,8 +325,9 @@ def main(args):
         F0_ori = f0_fn(ori_waves_16k[0], thred=0.03)
         F0_alt = f0_fn(converted_waves_16k[0], thred=0.03)
 
-        F0_ori = torch.from_numpy(F0_ori).to(device)[None]
-        F0_alt = torch.from_numpy(F0_alt).to(device)[None]
+        # RMVPE returns float64; MPS only supports float32/float16.
+        F0_ori = torch.from_numpy(F0_ori).float().to(device)[None]
+        F0_alt = torch.from_numpy(F0_alt).float().to(device)[None]
 
         voiced_F0_ori = F0_ori[F0_ori > 1]
         voiced_F0_alt = F0_alt[F0_alt > 1]

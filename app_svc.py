@@ -1,5 +1,4 @@
 import os
-os.environ['HF_HUB_CACHE'] = './checkpoints/hf_cache'
 import gradio as gr
 import torch
 import torchaudio
@@ -406,8 +405,8 @@ def main(args):
         gr.Slider(minimum=1, maximum=200, value=10, step=1, label="Diffusion Steps / 扩散步数", info="10 by default, 50~100 for best quality / 默认为 10，50~100 为最佳质量"),
         gr.Slider(minimum=0.5, maximum=2.0, step=0.1, value=1.0, label="Length Adjust / 长度调整", info="<1.0 for speed-up speech, >1.0 for slow-down speech / <1.0 加速语速，>1.0 减慢语速"),
         gr.Slider(minimum=0.0, maximum=1.0, step=0.1, value=0.7, label="Inference CFG Rate", info="has subtle influence / 有微小影响"),
-        gr.Checkbox(label="Auto F0 adjust / 自动F0调整", value=True,
-                    info="Roughly adjust F0 to match target voice. Only works when F0 conditioned model is used. / 粗略调整 F0 以匹配目标音色，仅在勾选 '启用F0输入' 时生效"),
+        gr.Checkbox(label="Auto F0 adjust / 自动F0调整", value=False,
+                    info="Keep disabled to preserve the song's original key. / 翻唱通常保持关闭，以保留原曲调性"),
         gr.Slider(label='Pitch shift / 音调变换', minimum=-24, maximum=24, step=1, value=0, info="Pitch shift in semitones, only works when F0 conditioned model is used / 半音数的音高变换，仅在勾选 '启用F0输入' 时生效"),
     ]
 
