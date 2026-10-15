@@ -71,8 +71,12 @@ def load_models(args):
         bigvgan_model = bigvgan.BigVGAN.from_pretrained(bigvgan_name, use_cuda_kernel=False)
         # remove weight norm in the model and set to eval mode
         bigvgan_model.remove_weight_norm()
-        bigvgan_model = bigvgan_model.eval().to(device)
-        vocoder_fn = bigvgan_model
+        # PyTorch 2.5 MPS rejects long ConvTranspose1d outputs even with the
+        # fallback env flag set. Keep only the vocoder on CPU for this backend.
+        vocoder_device = torch.device("cpu") if device.type == "mps" else device
+        bigvgan_model = bigvgan_model.eval().to(vocoder_device)
+        vocoder_fn = lambda mel: bigvgan_model(mel.to(vocoder_device))
+        print(f"BigVGAN device: {vocoder_device}")
     elif vocoder_type == 'hifigan':
         from modules.hifigan.generator import HiFTGenerator
         from modules.hifigan.f0_predictor import ConvRNNF0Predictor
@@ -110,6 +114,7 @@ def load_models(args):
 
         def semantic_fn(waves_16k):
             ori_inputs = whisper_feature_extractor([waves_16k.squeeze(0).cpu().numpy()],
+                                                   sampling_rate=16000,
                                                    return_tensors="pt",
                                                    return_attention_mask=True)
             ori_input_features = whisper_model._mask_input_features(

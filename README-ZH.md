@@ -122,6 +122,9 @@ uv run --env-file .env python -m unittest discover -s tests -v
 这两个入口的设备选择逻辑写在代码中，运行时按 **CUDA → MPS → CPU** 自动检测。
 Apple Silicon Mac 在 MPS 可用时使用 Apple GPU；没有 `.env` 的 `DEVICE` 配置或 `--device` 参数。
 SVC 网页入口的 `--gpu` 仅选择 CUDA 显卡编号。网页启动日志会输出 `Using device: mps` 等实际结果。
+在当前 PyTorch 2.5.1 环境下，BigVGAN 的长音频卷积会触发 MPS 尺寸限制，
+因此这两个入口在 MPS 模式下仅将 BigVGAN 声码器放在 CPU，其他模型仍使用 MPS。
+日志中的 `BigVGAN device: cpu` 属于正常行为。
 
 ### 角色音色翻唱
 
