@@ -20,7 +20,7 @@
 
 ## 本地 Mac 环境（uv）
 
-本项目的 uv 环境固定使用 Python 3.10、PyTorch 2.5.1 和 NumPy 1.26.4，
+本项目的 uv 环境固定使用 Python 3.10、PyTorch 2.6.0 和 NumPy 1.26.4，
 适用于 Apple Silicon Mac。依赖由 `pyproject.toml` 和 `uv.lock` 管理，
 无需安装 CUDA 或 nightly PyTorch。系统需要 FFmpeg（若没有，可用 `brew install ffmpeg` 安装）。
 当前验证的模型依赖为 Transformers 5.0.0 和 huggingface-hub 1.33.0，
@@ -107,7 +107,8 @@ uv pip check
 uv run --env-file .env python -m unittest discover -s tests -v
 ```
 
-测试覆盖 BigVGAN 本地加载、Hub 下载接口调用，以及 Whisper 的 CPU / MPS 半精度编码。
+测试覆盖扩散求解器的数值回归、BigVGAN 本地加载和 Hub 下载接口调用，
+以及 BigVGAN 长波形的 CPU / MPS 单精度对照、Whisper 的 CPU / MPS 半精度编码。
 它们验证 API 和计算路径，完整翻唱效果仍需权重下载完成后使用真实音频试听。
 
 ### 输入输出目录与设备
@@ -122,9 +123,30 @@ uv run --env-file .env python -m unittest discover -s tests -v
 这两个入口的设备选择逻辑写在代码中，运行时按 **CUDA → MPS → CPU** 自动检测。
 Apple Silicon Mac 在 MPS 可用时使用 Apple GPU；没有 `.env` 的 `DEVICE` 配置或 `--device` 参数。
 SVC 网页入口的 `--gpu` 仅选择 CUDA 显卡编号。网页启动日志会输出 `Using device: mps` 等实际结果。
-在当前 PyTorch 2.5.1 环境下，BigVGAN 的长音频卷积会触发 MPS 尺寸限制，
-因此这两个入口在 MPS 模式下仅将 BigVGAN 声码器放在 CPU，其他模型仍使用 MPS。
-日志中的 `BigVGAN device: cpu` 属于正常行为。
+PyTorch 2.6.0 配合 macOS 15.1 及以上支持这里使用的长音频卷积，
+BigVGAN 声码器默认跟随模型设备，在 Apple Silicon 上日志应显示 `BigVGAN device: mps`。
+`app_svc.py` 和 `inference.py` 均支持 `--vocoder-device cpu`，可用于旧系统兼容或 CPU 对照；
+默认值为 `auto`。这只改变声码器的设备，其他模型仍按上述规则选择设备。
+继续使用 `--fp16 False` 可保持本次验证的精度设置：DiT 和 BigVGAN 为 FP32，
+Whisper 编码器沿用项目原有的 FP16 加载方式；没有启用额外的低精度或 fast-math 优化。
+
+### 推理性能与精度验证
+
+固定同一段 15 秒干唱、约 10 秒参考、随机种子、100 步和 CFG 0.7，在本机 MPS 上对比：
+
+| 配置 | 扩散耗时 | 声码器耗时 | 含前处理的推理耗时 |
+| --- | --- | --- | --- |
+| PyTorch 2.5.1，原循环，CPU 声码器 | 82.95 秒 | 25.55 秒 | 111.44 秒 |
+| PyTorch 2.5.1，优化循环，CPU 声码器 | 83.08 秒 | 25.24 秒 | 未重复前处理 |
+| PyTorch 2.6.0，优化循环，MPS 声码器 | 66.32 秒 | 4.62 秒 | 74.49 秒 |
+
+时间不含模型加载，按 MPS 同步后的阶段边界计时；它们是本机单次短片测试结果，
+不能直接当作其他设备或整曲的速度保证。
+循环优化移除了未使用的历史状态保存，并把不变的 CFG 条件拼接移出循环，
+保持采样公式、步数和精度不变；真实模型的频谱和波形均与原循环逐元素相等。
+升级 PyTorch 并使用 MPS 声码器后，输入特征与初始噪声仍相等；
+该片段输出波形的最大绝对差约 `2.7e-4`、均方根差约 `4.1e-6`。
+新版内核不保证与旧版 CPU 结果逐位相同，实际听感仍需使用自己的素材对照试听。
 
 ### 角色音色翻唱
 

@@ -71,9 +71,9 @@ def load_models(args):
         bigvgan_model = bigvgan.BigVGAN.from_pretrained(bigvgan_name, use_cuda_kernel=False)
         # remove weight norm in the model and set to eval mode
         bigvgan_model.remove_weight_norm()
-        # PyTorch 2.5 MPS rejects long ConvTranspose1d outputs even with the
-        # fallback env flag set. Keep only the vocoder on CPU for this backend.
-        vocoder_device = torch.device("cpu") if device.type == "mps" else device
+        # PyTorch 2.6 supports long MPS convolutions on macOS >= 15.1.
+        # Keep an explicit CPU option for compatibility and output comparisons.
+        vocoder_device = torch.device("cpu") if getattr(args, "vocoder_device", "auto") == "cpu" else device
         bigvgan_model = bigvgan_model.eval().to(vocoder_device)
         vocoder_fn = lambda mel: bigvgan_model(mel.to(vocoder_device))
         print(f"BigVGAN device: {vocoder_device}")
@@ -461,6 +461,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, default="./output_files", help="Directory for completed WAV files")
     parser.add_argument("--share", type=str2bool, nargs="?", const=True, default=False, help="Whether to share the app")
     parser.add_argument("--fp16", type=str2bool, nargs="?", const=True, help="Whether to use fp16", default=True)
+    parser.add_argument("--vocoder-device", choices=["auto", "cpu"], default="auto",
+                        help="BigVGAN device: auto follows the model device; cpu enables the compatibility path")
     parser.add_argument("--gpu", type=int, help="Which GPU id to use", default=0)
     args = parser.parse_args()
     cuda_target = f"cuda:{args.gpu}" if args.gpu else "cuda" 

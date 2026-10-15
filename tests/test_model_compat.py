@@ -73,6 +73,20 @@ class ModelCompatibilityTests(unittest.TestCase):
             model = BigVGAN.from_pretrained("test/tiny-vocoder", local_files_only=True)
         self.check_vocoder(model)
 
+    @unittest.skipUnless(torch.backends.mps.is_available(), "MPS is not available")
+    def test_bigvgan_mps_long_waveform_fp32(self):
+        # Exceed the old MPS convolution size limit with a small, cheap model.
+        mel = torch.randn(1, 4, 16385, generator=torch.Generator().manual_seed(7))
+        model = BigVGAN.from_pretrained(self.root / "bigvgan", local_files_only=True).eval()
+        model.remove_weight_norm()
+        with torch.inference_mode():
+            expected = model(mel)
+            actual = model.to("mps")(mel.to("mps")).cpu()
+        self.assertEqual(actual.shape, (1, 1, 65540))
+        self.assertEqual(actual.dtype, torch.float32)
+        self.assertTrue(torch.isfinite(actual).all().item())
+        torch.testing.assert_close(actual, expected, rtol=1e-4, atol=1e-5)
+
     def check_whisper(self, device, dtype):
         extractor = AutoFeatureExtractor.from_pretrained(self.root / "whisper", local_files_only=True)
         wave = np.sin(2 * np.pi * 220 * np.arange(8000) / 16000).astype(np.float32) * 0.1
