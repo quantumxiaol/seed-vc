@@ -135,7 +135,7 @@ def load_models(args):
         # whisper
         from transformers import AutoFeatureExtractor, WhisperModel
         whisper_name = model_params.speech_tokenizer.name
-        whisper_model = WhisperModel.from_pretrained(whisper_name, torch_dtype=torch.float16).to(device)
+        whisper_model = WhisperModel.from_pretrained(whisper_name, dtype=torch.float16).to(device)
         del whisper_model.decoder
         whisper_feature_extractor = AutoFeatureExtractor.from_pretrained(whisper_name)
 
@@ -148,7 +148,6 @@ def load_models(args):
             with torch.no_grad():
                 ori_outputs = whisper_model.encoder(
                     ori_input_features.to(whisper_model.encoder.dtype),
-                    head_mask=None,
                     output_attentions=False,
                     output_hidden_states=False,
                     return_dict=True,

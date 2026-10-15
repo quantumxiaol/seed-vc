@@ -23,6 +23,9 @@
 本项目的 uv 环境固定使用 Python 3.10、PyTorch 2.5.1 和 NumPy 1.26.4，
 适用于 Apple Silicon Mac。依赖由 `pyproject.toml` 和 `uv.lock` 管理，
 无需安装 CUDA 或 nightly PyTorch。系统需要 FFmpeg（若没有，可用 `brew install ffmpeg` 安装）。
+当前验证的模型依赖为 Transformers 5.0.0 和 huggingface-hub 1.33.0，
+BigVGAN 加载器已适配 Hub 1.x，Whisper 调用已使用 Transformers 5 的参数。
+Hub 新版包含镜像 308 重定向处理修复；镜像若跳回官方站点，仍需要能够访问官方网络。
 当前 uv 包索引使用清华 PyPI 镜像，以避免本机访问 PyPI 文件服务器缓慢；
 模型下载仍使用 Hugging Face 官方仓库。
 
@@ -31,7 +34,7 @@
 ```bash
 uv sync --locked
 cp -n .env.example .env
-uv run --env-file .env download_svc_models.py
+uv run --env-file .env scripts/download_svc_models.py
 uv run --env-file .env app_svc.py --fp16 False
 ```
 
@@ -43,12 +46,82 @@ uv run --env-file .env app_svc.py --fp16 False
 `HF_HOME=./modelsweights` 会把缓存放到项目根目录的 `modelsweights/hub/`，
 其中包括 44.1 kHz SVC 主模型、Whisper-small、BigVGAN、CAMPPlus 和 RMVPE。
 下载脚本仅获取这条歌声转换流程所需的文件，重复运行会复用缓存。
-使用 `uv run --env-file .env download_svc_models.py --check` 可检查本地文件是否齐全。
-`.venv/`、`.env`、模型和 `outputs/` 已加入 Git 忽略列表。
+脚本会显示当前文件、字节进度、速度和预计剩余时间；网络失败自动重试（每个文件默认最多 5 次）。
+按 Ctrl+C 中断后，重新执行同一命令即可续传。脚本自行保留 `.incomplete` 文件，
+通过 HTTP Range 续传，并在完成后校验大小和哈希，再写入标准 HF 缓存。
+这是为 Hub 1.33 在失败时会清理临时文件而做的处理；不要删除未完成文件或切换缓存目录。
+上述缓存结构可被应用直接复用，根目录的旧脚本入口也继续可用。
+
+辅助权重分别位于以下目录，文件名可在各自的 `snapshots/<版本>/` 中查看：
+
+```text
+modelsweights/hub/
+├── models--openai--whisper-small/
+├── models--nvidia--bigvgan_v2_44khz_128band_512x/
+├── models--funasr--campplus/
+└── models--lj1995--VoiceConversionWebUI/
+```
+
+浏览器下载的主权重可直接放在 `modelsweights/` 下，保留原文件名。
+脚本会识别 `$HF_HOME/DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema_v2.pth`，
+跳过主权重下载，并打印对应的启动命令。其他位置可以通过 `--checkpoint 路径` 指定。
+手动文件不属于 HF 缓存，启动应用仍需传入 `--checkpoint` 和仓库自带的 `--config`：
+
+```bash
+# 只下载 Whisper、BigVGAN、CAMPPlus、RMVPE
+uv run --env-file .env scripts/download_svc_models.py --only-aux
+
+# 仅检查缓存，不联网；文件缺失时退出码为 1
+uv run --env-file .env scripts/download_svc_models.py --only-aux --check
+
+uv run --env-file .env app_svc.py \
+  --checkpoint modelsweights/DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema_v2.pth \
+  --config configs/presets/config_dit_mel_seed_uvit_whisper_base_f0_44k.yml \
+  --fp16 False
+```
+
+实际目录以 `.env` 的 `HF_HOME` 为准；若另设了 `HF_HUB_CACHE`，后者优先指定 `hub/` 的位置。
+运行时脚本会打印最终缓存路径。
+`.venv/`、`.env`、模型、输入素材和输出音频已加入 Git 忽略列表。
 
 如果网络无法直连 Hugging Face，可以在 `.env` 中配置自己的 `HTTP_PROXY` / `HTTPS_PROXY`，
 同时设置 `NO_PROXY=localhost,127.0.0.1,::1`，避免本地 Web UI 走代理；
 也可按下文使用 `HF_ENDPOINT` 镜像。公开模型不需要 Hugging Face token。
+
+若下载报 `SSL: UNEXPECTED_EOF_WHILE_READING`，镜像可能已经跳转回官方站点，
+而当前网络无法直连。请在 `.env` 中显式配置代理，例如本机 HTTP 代理端口为 `10808` 时：
+
+```dotenv
+HTTP_PROXY=http://127.0.0.1:10808
+HTTPS_PROXY=http://127.0.0.1:10808
+NO_PROXY=localhost,127.0.0.1,::1
+```
+
+保持代理软件运行，再重跑同一下载命令；`HTTPS_PROXY` 的值使用该 HTTP 代理的 `http://` 地址。
+代理配置也会用于应用启动时的 HF 请求。
+
+升级后的离线兼容测试（自动生成小模型，不需要下载完整权重）：
+
+```bash
+uv pip check
+uv run --env-file .env python -m unittest discover -s tests -v
+```
+
+测试覆盖 BigVGAN 本地加载、Hub 下载接口调用，以及 Whisper 的 CPU / MPS 半精度编码。
+它们验证 API 和计算路径，完整翻唱效果仍需权重下载完成后使用真实音频试听。
+
+### 输入输出目录与设备
+
+项目根目录的 `input_files/` 用于放源干唱和角色参考音频；`output_files/` 用于保存转换结果。
+两个目录仅提交 `.gitkeep` 占位文件，音频文件不会进入 Git。
+在 SVC 网页里从 `input_files/` 选择或拖入文件，完整结果会自动保存到 `output_files/`，
+文件名包含时间和随机后缀，重复转换不会覆盖之前的结果。
+`app_svc.py` 和 `inference.py` 都支持 `--output 目录`，默认值为 `./output_files`。
+命令行的 `--source` / `--target` 仍需指定实际文件路径。
+
+这两个入口的设备选择逻辑写在代码中，运行时按 **CUDA → MPS → CPU** 自动检测。
+Apple Silicon Mac 在 MPS 可用时使用 Apple GPU；没有 `.env` 的 `DEVICE` 配置或 `--device` 参数。
+SVC 网页入口的 `--gpu` 仅选择 CUDA 显卡编号。网页启动日志会输出 `Using device: mps` 等实际结果。
 
 ### 角色音色翻唱
 
@@ -64,9 +137,11 @@ uv run --env-file .env app_svc.py --fp16 False
 
 ```bash
 uv run --env-file .env inference.py \
-  --source "input/song_dry.wav" \
-  --target "input/character_reference.wav" \
-  --output outputs \
+  --source "input_files/song_dry.wav" \
+  --target "input_files/character_reference.wav" \
+  --output output_files \
+  --checkpoint modelsweights/DiT_seed_v2_uvit_whisper_base_f0_44k_bigvgan_pruned_ft_ema_v2.pth \
+  --config configs/presets/config_dit_mel_seed_uvit_whisper_base_f0_44k.yml \
   --f0-condition True \
   --auto-f0-adjust False \
   --semi-tone-shift 0 \

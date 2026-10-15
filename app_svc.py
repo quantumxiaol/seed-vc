@@ -9,10 +9,14 @@ from hf_utils import load_custom_model_from_hf
 import numpy as np
 from pydub import AudioSegment
 import argparse
+from datetime import datetime
+from pathlib import Path
+from uuid import uuid4
 # Load model and configuration
 
 fp16 = False
 device = None
+output_dir = Path("output_files")
 def load_models(args):
     global sr, hop_length, fp16
     fp16 = args.fp16
@@ -100,7 +104,7 @@ def load_models(args):
         # whisper
         from transformers import AutoFeatureExtractor, WhisperModel
         whisper_name = model_params.speech_tokenizer.name
-        whisper_model = WhisperModel.from_pretrained(whisper_name, torch_dtype=torch.float16).to(device)
+        whisper_model = WhisperModel.from_pretrained(whisper_name, dtype=torch.float16).to(device)
         del whisper_model.decoder
         whisper_feature_extractor = AutoFeatureExtractor.from_pretrained(whisper_name)
 
@@ -113,7 +117,6 @@ def load_models(args):
             with torch.no_grad():
                 ori_outputs = whisper_model.encoder(
                     ori_input_features.to(whisper_model.encoder.dtype),
-                    head_mask=None,
                     output_attentions=False,
                     output_hidden_states=False,
                     return_dict=True,
@@ -236,6 +239,18 @@ sr = None
 hop_length = None
 overlap_frame_len = 16
 
+
+def save_output_audio(waveform):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"svc_{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}.wav"
+    output_path = output_dir / filename
+    # Use Gradio's existing WAV conversion so browser playback and the saved
+    # file keep the same normalization and encoding as the previous UI output.
+    gr.processing_utils.audio_to_file(sr, waveform, str(output_path), format="wav")
+    print(f"Saved output: {output_path.resolve()}")
+    return str(output_path)
+
+
 @torch.no_grad()
 @torch.inference_mode()
 def voice_conversion(source, target, diffusion_steps, length_adjust, inference_cfg_rate, auto_f0_adjust, pitch_shift):
@@ -351,7 +366,7 @@ def voice_conversion(source, target, diffusion_steps, length_adjust, inference_c
                     output_wave.tobytes(), frame_rate=sr,
                     sample_width=output_wave.dtype.itemsize, channels=1
                 ).export(format="mp3", bitrate=bitrate).read()
-                yield mp3_bytes, (sr, np.concatenate(generated_wave_chunks))
+                yield mp3_bytes, save_output_audio(np.concatenate(generated_wave_chunks))
                 break
             output_wave = vc_wave[0, :-overlap_wave_len].cpu().numpy()
             generated_wave_chunks.append(output_wave)
@@ -372,7 +387,7 @@ def voice_conversion(source, target, diffusion_steps, length_adjust, inference_c
                 output_wave.tobytes(), frame_rate=sr,
                 sample_width=output_wave.dtype.itemsize, channels=1
             ).export(format="mp3", bitrate=bitrate).read()
-            yield mp3_bytes, (sr, np.concatenate(generated_wave_chunks))
+            yield mp3_bytes, save_output_audio(np.concatenate(generated_wave_chunks))
             break
         else:
             output_wave = crossfade(previous_chunk.cpu().numpy(), vc_wave[0, :-overlap_wave_len].cpu().numpy(), overlap_wave_len)
@@ -390,6 +405,10 @@ def voice_conversion(source, target, diffusion_steps, length_adjust, inference_c
 def main(args):
     global model_f0, semantic_fn, vocoder_fn, campplus_model, to_mel_f0, mel_fn_args, f0_fn
     global overlap_wave_len, max_context_window, sr, hop_length
+    global output_dir
+    output_dir = Path(args.output).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Output directory: {output_dir}")
     model_f0, semantic_fn, vocoder_fn, campplus_model, to_mel_f0, mel_fn_args, f0_fn = load_models(args)
     # streaming and chunk processing related params
     max_context_window = sr // hop_length * 30
@@ -428,12 +447,13 @@ def main(args):
                  title="Seed Voice Conversion",
                  examples=examples,
                  cache_examples=False,
-                 ).launch(share=args.share,)
+                 ).launch(share=args.share, allowed_paths=[str(output_dir)])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=str, help="Path to the checkpoint file", default=None)
     parser.add_argument("--config", type=str, help="Path to the config file", default=None)
+    parser.add_argument("--output", type=str, default="./output_files", help="Directory for completed WAV files")
     parser.add_argument("--share", type=str2bool, nargs="?", const=True, default=False, help="Whether to share the app")
     parser.add_argument("--fp16", type=str2bool, nargs="?", const=True, help="Whether to use fp16", default=True)
     parser.add_argument("--gpu", type=int, help="Which GPU id to use", default=0)

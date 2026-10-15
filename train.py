@@ -188,7 +188,6 @@ class Trainer:
                 with torch.no_grad():
                     ori_outputs = self.whisper_model.encoder(
                         ori_input_features.to(self.whisper_model.encoder.dtype),
-                        head_mask=None,
                         output_attentions=False,
                         output_hidden_states=False,
                         return_dict=True,

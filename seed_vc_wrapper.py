@@ -82,7 +82,7 @@ class SeedVCWrapper:
         
         # Load whisper model
         whisper_name = model_params.speech_tokenizer.whisper_name if hasattr(model_params.speech_tokenizer, 'whisper_name') else "openai/whisper-small"
-        self.whisper_model = WhisperModel.from_pretrained(whisper_name, torch_dtype=torch.float16).to(self.device)
+        self.whisper_model = WhisperModel.from_pretrained(whisper_name, dtype=torch.float16).to(self.device)
         del self.whisper_model.decoder
         self.whisper_feature_extractor = AutoFeatureExtractor.from_pretrained(whisper_name)
         
@@ -262,7 +262,6 @@ class SeedVCWrapper:
             ).to(self.device)
             outputs = self.whisper_model.encoder(
                 input_features.to(self.whisper_model.encoder.dtype),
-                head_mask=None,
                 output_attentions=False,
                 output_hidden_states=False,
                 return_dict=True,
@@ -294,7 +293,6 @@ class SeedVCWrapper:
                 ).to(self.device)
                 outputs = self.whisper_model.encoder(
                     input_features.to(self.whisper_model.encoder.dtype),
-                    head_mask=None,
                     output_attentions=False,
                     output_hidden_states=False,
                     return_dict=True,
@@ -458,4 +456,4 @@ class SeedVCWrapper:
         if not stream_output:
             return np.concatenate(generated_wave_chunks)
         
-        return None, None 
+        return None, None
